@@ -3,6 +3,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import uuid
 
 CONFIG = {
     'openai': ('OPENAI_API_KEY', 'https://api.openai.com/v1/chat/completions'),
@@ -37,6 +38,12 @@ class Provider:
             raise ValueError('Cần đặt MODEL là model có hỗ trợ tool calling.')
         self.name, self.model = name, model
         key_name, self.url = CONFIG[name]
+        self.extra_headers = {}
+        # Cho phép đổi endpoint OpenAI-compatible (ví dụ opencode.ai) qua API_ENDPOINT.
+        if name == 'openai' and os.getenv('API_ENDPOINT'):
+            self.url = os.getenv('API_ENDPOINT').rstrip('/') + '/chat/completions'
+            # opencode yêu cầu session ID ổn định cho mỗi hội thoại; Cloudflare chặn User-Agent mặc định của Python.
+            self.extra_headers = {'User-Agent': 'StatusAgentLab/1.0', 'x-opencode-session': str(uuid.uuid4())}
         self.key = os.getenv(key_name)
         if not self.key:
             raise ValueError(f'Thiếu {key_name}; xem README.md.')
@@ -47,7 +54,7 @@ class Provider:
         payload = {'model': self.model, 'messages': messages}
         if schemas:
             payload['tools'] = schemas
-        data = post_json(self.url, {'Authorization': f'Bearer {self.key}'}, payload)
+        data = post_json(self.url, {'Authorization': f'Bearer {self.key}', **self.extra_headers}, payload)
         choice = data['choices'][0]
         message = choice['message']
         calls = [{'id': c['id'], 'name': c['function']['name'], 'arguments': c['function']['arguments']} for c in message.get('tool_calls', [])]
